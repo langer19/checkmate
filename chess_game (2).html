@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Chess</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik+Dirt&display=swap" rel="stylesheet">
+    <style>
+        .chess-piece {
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+            transition: transform 0.1s ease-in-out;
+            cursor: pointer;
+            -webkit-user-drag: none; /* Prevent ghost dragging on images */
+        }
+        .chess-piece:active {
+            transform: scale(0.9);
+        }
+        
+        .white-piece { 
+            color: #db2777; /* Deep Pink */
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.7); 
+        }
+        .black-piece { 
+            color: #1e40af; /* Deep Blue */
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.7); 
+        }
+        
+        /* Board colors */
+        .square-light { background-color: #fbcfe8; } /* pink-200 */
+        .square-dark { background-color: #60a5fa; } /* blue-400 */
+        
+        .selected {
+            background-color: #fcd34d !important; /* amber-300 */
+        }
+        .in-check {
+            background-color: #fca5a5 !important; /* red-300 */
+            box-shadow: inset 0 0 10px #ef4444;
+        }
+        
+        .checkmate-text {
+            font-family: 'Rubik Dirt', system-ui;
+            color: #94a3b8; /* slate-400 */
+            -webkit-text-stroke: 3px #0f172a;
+            text-shadow: 
+                5px 5px 0px #475569, 
+                10px 10px 0px #0f172a, 
+                15px 15px 25px rgba(0,0,0,0.9);
+            animation: rock-slam 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes rock-slam {
+            0% { transform: scale(3.5) rotate(15deg); opacity: 0; }
+            100% { transform: scale(1) rotate(-6deg); opacity: 1; }
+        }
+        
+        @keyframes fall-down {
+            0% { transform: rotate(0deg); }
+            60% { transform: rotate(90deg) translate(15%, 20%); }
+            80% { transform: rotate(75deg) translate(15%, 15%); }
+            100% { transform: rotate(90deg) translate(15%, 20%); opacity: 0.7; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+        }
+        
+        .fallen-king {
+            animation: fall-down 0.8s forwards ease-in-out;
+            transform-origin: bottom right;
+        }
+
+        @keyframes king-toss {
+            0%, 100% { transform: translateY(0) scale(1); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+            50% { transform: translateY(-90%) scale(1.35); filter: drop-shadow(0 20px 15px rgba(0,0,0,0.8)); }
+        }
+        .king-toss {
+            animation: king-toss 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+            position: relative;
+            z-index: 45; /* Make sure he goes above other pieces */
+        }
+
+        @keyframes team-cheer {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20%); }
+        }
+        .team-cheer {
+            animation: team-cheer 0.35s ease-out infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-4px) rotate(-1deg); }
+            50% { transform: translateX(4px) rotate(1deg); }
+            75% { transform: translateX(-4px) rotate(-1deg); }
+        }
+        .shake-board {
+            animation: shake 0.25s ease-in-out;
+        }
+        
+        @keyframes run-across {
+            0% { left: -100vw; }
+            100% { left: 120vw; }
+        }
+        
+        @keyframes run-bounce {
+            0%, 100% { transform: translateY(0) rotate(5deg); }
+            50% { transform: translateY(-30px) rotate(-15deg); }
+        }
+        
+        @keyframes flag-wave {
+            0% { transform: rotate(-10deg) skewY(-5deg); }
+            100% { transform: rotate(15deg) skewY(5deg); }
+        }
+        
+        .valid-move-indicator {
+            width: 30%;
+            height: 30%;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+        }
+        .valid-capture-indicator {
+            width: 100%;
+            height: 100%;
+            border: 4px solid rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            position: absolute;
+            pointer-events: none;
+        }
+        
+        #board-container {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 1 / 1;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 4px solid #1e293b; /* slate-800 */
+            position: relative;
+        }
+        
+        .square {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(1.5rem, 6vw, 3.5rem);
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+
+    <div class="w-full max-w-[600px] flex justify-between items-end mb-4">
+        <div>
+            <h1 class="text-3xl font-bold tracking-tight text-white mb-1">Chess</h1>
+            <p id="status-text" class="text-lg font-medium text-amber-400">White's Turn</p>
+        </div>
+        <div class="flex gap-2">
+            <select id="game-mode" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-md shadow-md transition-colors cursor-pointer focus:outline-none" onchange="changeMode()">
+                <option value="human">vs Human</option>
+                <option value="bot-w">Play as White (vs Bot)</option>
+                <option value="bot-b">Play as Black (vs Bot)</option>
+            </select>
+            <button onclick="showResignModal()" class="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded-md shadow-md transition-colors flex items-center gap-2">
+                <i class="fa-solid fa-flag"></i> Resign
+            </button>
+            <button onclick="initGame()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-md shadow-md transition-colors flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Reset
+            </button>
+        </div>
+    </div>
+
+    <div id="board-container">
+        <!-- Board will be generated here -->
+    </div>
+
+    <!-- Modal for Game Over -->
+    <div id="game-over-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center hidden z-50 opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 p-8 rounded-xl shadow-2xl text-center max-w-sm w-full mx-4 border border-slate-700 transform scale-95 transition-transform duration-300">
+            <h2 id="modal-title" class="text-3xl font-bold text-white mb-2">Checkmate!</h2>
+            <p id="modal-subtitle" class="text-slate-300 mb-6 text-lg">White wins</p>
+            <button onclick="closeModal(); initGame();" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold w-full transition-colors shadow-lg">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal for Resign Choice -->
+    <div id="resign-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center hidden z-50 opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 p-8 rounded-xl shadow-2xl text-center max-w-sm w-full mx-4 border border-slate-700 transform scale-95 transition-transform duration-300">
+            <h2 class="text-3xl font-bold text-white mb-6">Who is resigning?</h2>
+            <div class="flex gap-4 justify-center">
+                <button onclick="confirmResign('w')" class="bg-pink-600 hover:bg-pink-500 text-white px-6 py-3 rounded-lg font-semibold w-full transition-colors shadow-lg">
+                    White
+                </button>
+                <button onclick="confirmResign('b')" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold w-full transition-colors shadow-lg">
+                    Black
+                </button>
+            </div>
+            <button onclick="closeResignModal()" class="mt-6 text-slate-400 hover:text-white transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal for Pawn Promotion Choice -->
+    <div id="promotion-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center hidden z-[60] opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 p-8 rounded-xl shadow-2xl text-center max-w-md w-full mx-4 border border-slate-700 transform scale-95 transition-transform duration-300">
+            <h2 class="text-3xl font-bold text-white mb-6">Promote Pawn!</h2>
+            <div id="promotion-options" class="flex gap-4 justify-center">
+                <!-- Filled by JavaScript based on piece color -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME STATE ---
+        let board = [];
+        let currentTurn = 'w'; // 'w' or 'b'
+        let selectedSquare = null; // {r, c}
+        let validMovesForSelected = []; // array of {r, c}
+        let isGameOver = false;
+        let gameMode = 'human'; // 'human' or 'bot'
+        let botColor = null; // 'w', 'b', or null
+        let viewPerspective = 'w'; // 'w' or 'b'
+        let isAnimating = false;
+        let checkmateColor = null;
+        let pendingPromotion = null; // {r, c}
+
+        const PIECE_ICONS = {
+            'k': 'fa-chess-king',
+            'q': 'fa-chess-queen',
+            'r': 'fa-chess-rook',
+            'b': 'fa-chess-bishop',
+            'n': 'fa-chess-knight',
+            'p': 'fa-chess-pawn'
+        };
+
+        const PIECE_IMAGES = {
+            'w-k': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+            'w-q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+            'w-r': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+            'w-b': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+            'w-n': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+            'w-p': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+            'b-k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+            'b-q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+            'b-r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+            'b-b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+            'b-n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+            'b-p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
+        };
+
+        const INITIAL_BOARD = [
+            [{type: 'r', color: 'b'}, {type: 'n', color: 'b'}, {type: 'b', color: 'b'}, {type: 'q', color: 'b'}, {type: 'k', color: 'b'}, {type: 'b', color: 'b'}, {type: 'n', color: 'b'}, {type: 'r', color: 'b'}],
+            [{type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}, {type: 'p', color: 'b'}],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [{type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}, {type: 'p', color: 'w'}],
+            [{type: 'r', color: 'w'}, {type: 'n', color: 'w'}, {type: 'b', color: 'w'}, {type: 'q', color: 'w'}, {type: 'k', color: 'w'}, {type: 'b', color: 'w'}, {type: 'n', color: 'w'}, {type: 'r', color: 'w'}]
+        ];
+
+        // --- INITIALIZATION ---
+        function initGame() {
+            // Cancel any ongoing animations
+            document.querySelectorAll('.moving-hand-animator').forEach(el => el.remove());
+            isAnimating = false;
+
+            // Deep copy the initial board and add the "hasMoved" tracker for castling
+            board = INITIAL_BOARD.map(row => row.map(piece => piece ? {...piece, hasMoved: false} : null));
+            currentTurn = 'w';
+            selectedSquare = null;
+            validMovesForSelected = [];
+            isGameOver = false;
+            checkmateColor = null;
+            pendingPromotion = null;
+            closePromotionModal(true); // instantly hide if open
+            
+            const mode = document.getElementById('game-mode').value;
+            if (mode === 'human') {
+                gameMode = 'human';
+                botColor = null;
+                viewPerspective = 'w';
+            } else if (mode === 'bot-w') {
+                gameMode = 'bot';
+                botColor = 'b';
+                viewPerspective = 'w';
+            } else if (mode === 'bot-b') {
+                gameMode = 'bot';
+                botColor = 'w';
+                viewPerspective = 'b';
+            }
+
+            updateStatus();
+            renderBoard();
+
+            // If bot is playing as White, it needs to move first
+            if (gameMode === 'bot' && currentTurn === botColor) {
+                setTimeout(makeBotMove, 500);
+            }
+        }
+
+        // --- RENDERING ---
+        function renderBoard() {
+            const container = document.getElementById('board-container');
+            container.innerHTML = '';
+            
+            // Find King positions to highlight if in check
+            let whiteKingPos = null, blackKingPos = null;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = board[r][c];
+                    if (p && p.type === 'k') {
+                        if (p.color === 'w') whiteKingPos = {r, c};
+                        else blackKingPos = {r, c};
+                    }
+                }
+            }
+            
+            const isWhiteInCheck = isSquareAttacked(board, whiteKingPos.r, whiteKingPos.c, 'b');
+            const isBlackInCheck = isSquareAttacked(board, blackKingPos.r, blackKingPos.c, 'w');
+
+            // Determine rendering direction based on perspective
+            const rows = viewPerspective === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+            const cols = viewPerspective === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+
+            for (let r of rows) {
+                for (let c of cols) {
+                    const squareDiv = document.createElement('div');
+                    squareDiv.id = `square-${r}-${c}`;
+                    squareDiv.className = `square ${(r + c) % 2 === 0 ? 'square-light' : 'square-dark'}`;
+                    
+                    // Highlight selected
+                    if (selectedSquare && selectedSquare.r === r && selectedSquare.c === c) {
+                        squareDiv.classList.add('selected');
+                    }
+                    
+                    // Highlight Kings in Check
+                    if (isWhiteInCheck && whiteKingPos.r === r && whiteKingPos.c === c) squareDiv.classList.add('in-check');
+                    if (isBlackInCheck && blackKingPos.r === r && blackKingPos.c === c) squareDiv.classList.add('in-check');
+
+                    // Draw Valid Move Indicators
+                    const isMoveValid = validMovesForSelected.some(m => m.r === r && m.c === c);
+                    if (isMoveValid) {
+                        const indicator = document.createElement('div');
+                        indicator.className = board[r][c] ? 'valid-capture-indicator' : 'valid-move-indicator';
+                        squareDiv.appendChild(indicator);
+                    }
+
+                    // Draw Piece
+                    const piece = board[r][c];
+                    if (piece) {
+                        const icon = document.createElement('i');
+                        icon.className = `fa-solid ${PIECE_ICONS[piece.type]} chess-piece ${piece.color === 'w' ? 'white-piece' : 'black-piece'}`;
+                        
+                        // Make the king fall over if it was checkmated
+                        if (isGameOver && checkmateColor === piece.color && piece.type === 'k') {
+                            icon.classList.add('fallen-king');
+                        }
+
+                        // Winning team celebration! (Tossing the king up and down)
+                        if (isGameOver && checkmateColor && checkmateColor !== piece.color) {
+                            if (piece.type === 'k') {
+                                icon.classList.add('king-toss');
+                            } else {
+                                // The rest of the team bounces to cheer him on
+                                icon.classList.add('team-cheer');
+                                // Add a random delay so they don't bounce perfectly uniformly
+                                icon.style.animationDelay = `${Math.random() * 0.2}s`;
+                            }
+                        }
+
+                        squareDiv.appendChild(icon);
+                    }
+
+                    // Click handler
+                    squareDiv.onclick = () => handleSquareClick(r, c);
+                    container.appendChild(squareDiv);
+                }
+            }
+
+            // Draw Check Overlay over the board
+            if (!isGameOver && (isWhiteInCheck || isBlackInCheck)) {
+                const checkOverlay = document.createElement('div');
+                checkOverlay.className = 'absolute top-0 left-0 w-full h-full z-30 pointer-events-none flex items-center justify-center bg-red-600/20';
+                checkOverlay.innerHTML = `
+                    <span class="text-red-500 font-black text-5xl sm:text-6xl md:text-7xl tracking-widest animate-pulse" 
+                          style="-webkit-text-stroke: 2px white; text-shadow: 0px 10px 20px rgba(0,0,0,0.8);">
+                        CHECK!
+                    </span>`;
+                container.appendChild(checkOverlay);
+            }
+
+            // Draw Checkmate Overlay
+            if (isGameOver && checkmateColor) {
+                const checkmateOverlay = document.createElement('div');
+                checkmateOverlay.className = 'absolute top-0 left-0 w-full h-full z-40 pointer-events-none flex items-center justify-center bg-black/50';
+                checkmateOverlay.innerHTML = `
+                    <span class="checkmate-text text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-widest text-center leading-[0.9]">
+                        CHECK<br>MATE!
+                    </span>`;
+                container.appendChild(checkmateOverlay);
+            }
+        }
+
+        function updateStatus() {
+            const statusEl = document.getElementById('status-text');
+            if (isGameOver) return; // Status handled by modal
+            
+            const baseText = currentTurn === 'w' ? "White's Turn" : "Black's Turn";
+            statusEl.textContent = baseText;
+            statusEl.className = `text-lg font-medium ${currentTurn === 'w' ? 'text-slate-100' : 'text-slate-400'}`;
+        }
+
+        // --- INTERACTION LOGIC ---
+        function handleSquareClick(r, c) {
+            if (isGameOver || isAnimating) return;
+            if (gameMode === 'bot' && currentTurn === botColor) return; // Prevent human from moving bot's pieces
+
+            const piece = board[r][c];
+
+            // If a square is already selected
+            if (selectedSquare) {
+                // Check if clicked square is a valid move
+                const isValidMove = validMovesForSelected.some(m => m.r === r && m.c === c);
+                
+                if (isValidMove) {
+                    const fromR = selectedSquare.r;
+                    const fromC = selectedSquare.c;
+                    selectedSquare = null;
+                    validMovesForSelected = [];
+                    renderBoard(); // Clear highlights immediately
+                    animateMove(fromR, fromC, r, c);
+                    return;
+                }
+                
+                // If clicked on own piece, select it instead
+                if (piece && piece.color === currentTurn) {
+                    selectedSquare = {r, c};
+                    validMovesForSelected = getLegalMoves(board, r, c);
+                    renderBoard();
+                    return;
+                }
+
+                // If clicked elsewhere, deselect
+                selectedSquare = null;
+                validMovesForSelected = [];
+                renderBoard();
+            } else {
+                // No square selected yet
+                if (piece && piece.color === currentTurn) {
+                    selectedSquare = {r, c};
+                    validMovesForSelected = getLegalMoves(board, r, c);
+                    renderBoard();
+                }
+            }
+        }
+
+        function animateMove(fromR, fromC, toR, toC) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            const fromSquare = document.getElementById(`square-${fromR}-${fromC}`);
+            const toSquare = document.getElementById(`square-${toR}-${toC}`);
+            
+            // Fallback if elements aren't found for some reason
+            if (!fromSquare || !toSquare) {
+                executeMove(fromR, fromC, toR, toC);
+                isAnimating = false;
+                return;
+            }
+
+            const fromRect = fromSquare.getBoundingClientRect();
+            const toRect = toSquare.getBoundingClientRect();
+            const piece = board[fromR][fromC];
+
+            // Create absolute floating container
+            const animator = document.createElement('div');
+            animator.className = 'fixed z-50 pointer-events-none flex items-center justify-center moving-hand-animator';
+            animator.style.left = `${fromRect.left}px`;
+            animator.style.top = `${fromRect.top}px`;
+            animator.style.width = `${fromRect.width}px`;
+            animator.style.height = `${fromRect.height}px`;
+            animator.style.fontSize = getComputedStyle(fromSquare).fontSize;
+            animator.style.transition = 'left 0.4s ease-in-out, top 0.4s ease-in-out';
+
+            // Add the Piece Icon to float
+            const pieceIcon = document.createElement('i');
+            pieceIcon.className = `fa-solid ${PIECE_ICONS[piece.type]} chess-piece ${piece.color === 'w' ? 'white-piece' : 'black-piece'}`;
+            animator.appendChild(pieceIcon);
+
+            // Add the Hand Icon
+            const hand = document.createElement('i');
+            hand.className = 'fa-regular fa-hand drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] text-white';
+            hand.style.position = 'absolute';
+            hand.style.fontSize = '2.5rem';
+            hand.style.top = '-10px';
+            hand.style.right = '-20px';
+            hand.style.transition = 'transform 0.15s ease, opacity 0.2s';
+            hand.style.transform = 'translate(20px, -20px) scale(1.2)';
+            animator.appendChild(hand);
+
+            document.body.appendChild(animator);
+
+            // Hide original piece on the board so it looks like it was picked up
+            const originalPiece = fromSquare.querySelector('.chess-piece');
+            if (originalPiece) originalPiece.style.opacity = '0';
+
+            // Orchestrate the animation timeline
+            setTimeout(() => {
+                // 1. Hand swoops in and grabs
+                hand.className = 'fa-solid fa-hand-fist drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] text-slate-200';
+                hand.style.transform = 'translate(5px, 0px) scale(1)';
+                
+                setTimeout(() => {
+                    // 2. Move across the board
+                    animator.style.left = `${toRect.left}px`;
+                    animator.style.top = `${toRect.top}px`;
+
+                    setTimeout(() => {
+                        // --- KICK OFF ANIMATION ---
+                        const targetPieceObj = board[toR][toC];
+                        if (targetPieceObj && targetPieceObj.type !== 'k') {
+                            // Shake the board for impact!
+                            const boardContainer = document.getElementById('board-container');
+                            boardContainer.classList.add('shake-board');
+                            setTimeout(() => boardContainer.classList.remove('shake-board'), 250);
+
+                            // Explosion effect!
+                            const centerX = toRect.left + toRect.width / 2;
+                            const centerY = toRect.top + toRect.height / 2;
+                            createExplosion(centerX, centerY);
+
+                            // Create kicked piece container
+                            const kickedContainer = document.createElement('div');
+                            kickedContainer.className = 'fixed z-40 pointer-events-none flex items-center justify-center';
+                            kickedContainer.style.left = `${toRect.left}px`;
+                            kickedContainer.style.top = `${toRect.top}px`;
+                            kickedContainer.style.width = `${toRect.width}px`;
+                            kickedContainer.style.height = `${toRect.height}px`;
+                            kickedContainer.style.fontSize = getComputedStyle(toSquare).fontSize;
+                            kickedContainer.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+
+                            const kickedIcon = document.createElement('i');
+                            kickedIcon.className = `fa-solid ${PIECE_ICONS[targetPieceObj.type]} ${targetPieceObj.color === 'w' ? 'white-piece' : 'black-piece'}`;
+                            kickedIcon.style.filter = 'drop-shadow(0 4px 6px rgba(0,0,0,0.8))';
+                            kickedContainer.appendChild(kickedIcon);
+                            document.body.appendChild(kickedContainer);
+
+                            // Hide the original piece underneath immediately
+                            const originalTargetIcon = toSquare.querySelector('.chess-piece');
+                            if (originalTargetIcon) originalTargetIcon.style.opacity = '0';
+
+                            // Calculate trajectory based on direction of attack
+                            let dirX = toC - fromC;
+                            if (dirX === 0) dirX = Math.random() > 0.5 ? 1 : -1; // random left/right if straight vertical attack
+                            const flyX = Math.sign(dirX) * (window.innerWidth / 2 + 100); 
+                            const flyY = -200 - Math.random() * 300; // arc up and away
+                            const rotations = Math.sign(dirX) * (720 + Math.random() * 720); // spin rapidly
+
+                            // Start the kick trajectory on the next frame
+                            requestAnimationFrame(() => {
+                                kickedContainer.style.transform = `translate(${flyX}px, ${flyY}px) rotate(${rotations}deg) scale(0.3)`;
+                                kickedContainer.style.opacity = '0';
+                            });
+
+                            // Cleanup floating piece
+                            setTimeout(() => {
+                                if (document.body.contains(kickedContainer)) kickedContainer.remove();
+                            }, 600);
+                        }
+                        // --- END KICK OFF ---
+
+                        // 3. Hand releases the piece
+                        hand.className = 'fa-regular fa-hand drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] text-white';
+                        hand.style.transform = 'translate(20px, -20px) scale(1.2)';
+                        
+                        setTimeout(() => {
+                            // 4. Fade out hand and execute real move
+                            animator.style.opacity = '0';
+                            setTimeout(() => {
+                                // If user clicked reset during animation, abort executing the move
+                                if (!document.body.contains(animator)) return; 
+                                animator.remove();
+                                isAnimating = false;
+                                executeMove(fromR, fromC, toR, toC);
+                            }, 200);
+                        }, 150);
+                    }, 400); // Travel time
+                }, 150); // Grab time
+            }, 50); // Initial delay
+        }
+
+        function executeMove(fromR, fromC, toR, toC) {
+            // Move piece
+            const piece = board[fromR][fromC];
+            
+            // Castling Logic - Move the Rook too
+            if (piece.type === 'k' && Math.abs(toC - fromC) === 2) {
+                if (toC > fromC) {
+                    // Kingside Castling
+                    board[toR][toC - 1] = board[toR][7];
+                    board[toR][7] = null;
+                    if(board[toR][toC - 1]) board[toR][toC - 1].hasMoved = true;
+                } else {
+                    // Queenside Castling
+                    board[toR][toC + 1] = board[toR][0];
+                    board[toR][0] = null;
+                    if(board[toR][toC + 1]) board[toR][toC + 1].hasMoved = true;
+                }
+            }
+
+            piece.hasMoved = true; // Mark as moved (for pawns, kings, rooks)
+            board[toR][toC] = piece;
+            board[fromR][fromC] = null;
+
+            // Pawn Promotion
+            if (piece.type === 'p' && (toR === 0 || toR === 7)) {
+                if (gameMode === 'bot' && currentTurn === botColor) {
+                    // Bot automatically promotes to Queen
+                    board[toR][toC].type = 'q';
+                    finalizeTurn();
+                } else {
+                    // Human player chooses
+                    pendingPromotion = { r: toR, c: toC };
+                    showPromotionModal(piece.color);
+                }
+            } else {
+                finalizeTurn();
+            }
+        }
+
+        function finalizeTurn() {
+            // End turn logic
+            selectedSquare = null;
+            validMovesForSelected = [];
+            currentTurn = currentTurn === 'w' ? 'b' : 'w';
+            
+            checkGameState();
+            renderBoard();
+            updateStatus();
+
+            // Trigger bot if it's the computer's turn
+            if (gameMode === 'bot' && currentTurn === botColor && !isGameOver) {
+                setTimeout(makeBotMove, 500); // Wait half a second so the move feels natural
+            }
+        }
+
+        // --- GAME END LOGIC ---
+        function checkGameState() {
+            let hasAnyLegalMoves = false;
+            let kingPos = null;
+
+            // Check if current player has any valid moves
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = board[r][c];
+                    if (piece && piece.color === currentTurn) {
+                        if (piece.type === 'k') kingPos = {r, c};
+                        if (!hasAnyLegalMoves) {
+                            const moves = getLegalMoves(board, r, c);
+                            if (moves.length > 0) hasAnyLegalMoves = true;
+                        }
+                    }
+                }
+            }
+
+            if (!hasAnyLegalMoves) {
+                isGameOver = true;
+                const isCheck = isSquareAttacked(board, kingPos.r, kingPos.c, currentTurn === 'w' ? 'b' : 'w');
+                if (isCheck) {
+                    checkmateColor = currentTurn;
+                    document.getElementById('status-text').textContent = "Game Over - Checkmate";
+                    
+                    // Delay the modal so we can see the king fall over and the rock-breaking text!
+                    setTimeout(() => {
+                        showModal("Checkmate!", `${currentTurn === 'w' ? 'Black' : 'White'} wins by checkmate.`);
+                    }, 2500); 
+                } else {
+                    document.getElementById('status-text').textContent = "Game Over - Draw";
+                    showModal("Stalemate!", "The game is a draw.");
+                }
+            }
+        }
+
+        function showResignModal() {
+            if (isGameOver) return;
+            const modal = document.getElementById('resign-modal');
+            const modalContent = modal.querySelector('div');
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeResignModal() {
+            const modal = document.getElementById('resign-modal');
+            const modalContent = modal.querySelector('div');
+            
+            modal.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function confirmResign(color) {
+            closeResignModal();
+            resignGame(color);
+        }
+
+        function resignGame(resigningColor) {
+            if (isGameOver) return; // Do nothing if the game is already over
+            isGameOver = true;
+            
+            let winner = resigningColor === 'w' ? 'Black' : 'White';
+            
+            document.getElementById('status-text').textContent = "Game Over - Resigned";
+            
+            const survivingPieces = [];
+
+            // Hide the real pieces on the board because they are running away
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = board[r][c];
+                    if (p && p.color === resigningColor) {
+                        if (p.type !== 'k') {
+                            survivingPieces.push(p.type);
+                        }
+                        const square = document.getElementById(`square-${r}-${c}`);
+                        if (square) {
+                            const icon = square.querySelector('.chess-piece');
+                            if (icon) icon.style.opacity = '0';
+                        }
+                    }
+                }
+            }
+
+            // Create the running animation container
+            const runnerContainer = document.createElement('div');
+            runnerContainer.className = 'fixed top-[40%] z-[100] flex items-end pointer-events-none gap-2';
+            runnerContainer.style.width = 'max-content';
+            runnerContainer.style.animation = 'run-across 3.5s linear forwards';
+
+            // Add all the follower pieces first (so they trail behind on the left)
+            survivingPieces.forEach((type) => {
+                const follower = document.createElement('div');
+                follower.className = 'relative flex items-center justify-center';
+                follower.style.animation = `run-bounce 0.3s infinite ${Math.random() * 0.3}s`; // staggered bounce
+                
+                const pieceIcon = document.createElement('i');
+                pieceIcon.className = `fa-solid ${PIECE_ICONS[type]} text-[4rem] drop-shadow-[0_8px_8px_rgba(0,0,0,0.8)] ${resigningColor === 'w' ? 'white-piece' : 'black-piece'}`;
+                
+                follower.appendChild(pieceIcon);
+                runnerContainer.appendChild(follower);
+            });
+
+            // Add the King as the leader (on the right side)
+            const kingSprite = document.createElement('div');
+            kingSprite.className = 'relative flex items-center justify-center ml-6';
+            kingSprite.style.animation = 'run-bounce 0.3s infinite';
+            
+            // Flag pole
+            const pole = document.createElement('div');
+            pole.className = 'absolute -top-[60px] left-[60px] w-[6px] h-[120px] bg-[#8b4513] rounded-sm shadow-md';
+            
+            // Flag
+            const flag = document.createElement('div');
+            flag.className = 'absolute -top-[60px] left-[66px] w-[110px] h-[60px] bg-white border-2 border-slate-200 flex items-center justify-center text-red-600 font-black text-xl shadow-lg origin-bottom-left';
+            flag.style.animation = 'flag-wave 0.4s infinite alternate';
+            flag.innerHTML = 'RESIGN';
+            
+            // King icon
+            const kingIcon = document.createElement('i');
+            kingIcon.className = `fa-solid fa-chess-king text-[6rem] drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)] ${resigningColor === 'w' ? 'white-piece' : 'black-piece'}`;
+            
+            kingSprite.appendChild(pole);
+            kingSprite.appendChild(flag);
+            kingSprite.appendChild(kingIcon);
+            runnerContainer.appendChild(kingSprite);
+            
+            document.body.appendChild(runnerContainer);
+
+            // Delay the modal so we can watch them all run!
+            setTimeout(() => {
+                if (document.body.contains(runnerContainer)) {
+                    runnerContainer.remove();
+                }
+                showModal("Resigned!", `${winner} wins by resignation.`);
+            }, 3500); // 3.5 seconds to match the run animation
+        }
+
+        // --- PROMOTION MODAL ---
+        function showPromotionModal(color) {
+            const modal = document.getElementById('promotion-modal');
+            const optionsDiv = document.getElementById('promotion-options');
+            const modalContent = modal.querySelector('div');
+            optionsDiv.innerHTML = '';
+            
+            const pieces = ['q', 'r', 'b', 'n'];
+            const colorClass = color === 'w' ? 'white-piece' : 'black-piece';
+            
+            pieces.forEach(p => {
+                const btn = document.createElement('button');
+                btn.className = 'flex flex-col items-center justify-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors shadow-md flex-1';
+                btn.onclick = () => confirmPromotion(p);
+                btn.innerHTML = `<i class="fa-solid ${PIECE_ICONS[p]} text-4xl ${colorClass}"></i>`;
+                optionsDiv.appendChild(btn);
+            });
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closePromotionModal(instant = false) {
+            const modal = document.getElementById('promotion-modal');
+            const modalContent = modal.querySelector('div');
+            if (instant) {
+                modal.classList.add('hidden', 'opacity-0');
+                modalContent.classList.add('scale-95');
+                return;
+            }
+            modal.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        function confirmPromotion(type) {
+            if (!pendingPromotion) return;
+            board[pendingPromotion.r][pendingPromotion.c].type = type;
+            pendingPromotion = null;
+            closePromotionModal();
+            finalizeTurn();
+        }
+
+        // --- UI MODALS ---
+        function showModal(title, subtitle) {
+            const modal = document.getElementById('game-over-modal');
+            const modalContent = modal.querySelector('div');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-subtitle').textContent = subtitle;
+            
+            modal.classList.remove('hidden');
+            // Small delay to allow display:block to apply before animating opacity
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('game-over-modal');
+            const modalContent = modal.querySelector('div');
+            
+            modal.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300); // match duration
+        }
+
+        // --- BOT LOGIC ---
+        function changeMode() {
+            initGame(); // Re-initialize the game to properly set perspective and make the bot move if it is playing as White
+        }
+
+        function makeBotMove() {
+            if (isGameOver || currentTurn !== botColor) return;
+
+            const pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
+            
+            // --- Bot Resignation Logic ---
+            let botMaterial = 0;
+            let humanMaterial = 0;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = board[r][c];
+                    if (p && p.type !== 'k') {
+                        if (p.color === botColor) botMaterial += pieceValues[p.type];
+                        else humanMaterial += pieceValues[p.type];
+                    }
+                }
+            }
+            
+            // Calculate how far behind the bot is
+            const deficit = humanMaterial - botMaterial;
+            
+            // If the bot is down by at least a Queen (90 pts), it might resign
+            if (deficit >= 90) {
+                // The worse it's losing, the higher the chance to resign (max 50% chance per turn)
+                const resignChance = Math.min((deficit - 80) / 200, 0.5); 
+                if (Math.random() < resignChance) {
+                    setTimeout(() => {
+                        resignGame(botColor);
+                    }, 800); // Wait a moment, then resign
+                    return; // Stop the bot from making a move
+                }
+            }
+            // -----------------------------
+
+            let bestMoves = [];
+            let maxScore = -Infinity;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = board[r][c];
+                    if (piece && piece.color === botColor) {
+                        const moves = getLegalMoves(board, r, c);
+                        for (let move of moves) {
+                            let score = 0;
+                            const targetPiece = board[move.r][move.c];
+                            
+                            // 1. Reward captures
+                            if (targetPiece) {
+                                score += pieceValues[targetPiece.type];
+                            }
+                            
+                            // 2. Small bonuses for good positioning
+                            if (move.r >= 3 && move.r <= 4 && move.c >= 3 && move.c <= 4) {
+                                score += 0.5; // Favor the center of the board
+                            }
+                            if (piece.type === 'p') {
+                                score += 0.2; // Slightly favor moving pawns forward
+                            }
+                            if (piece.type === 'k' && Math.abs(move.c - c) === 2) {
+                                score += 1.5; // Favor castling to keep the king safe!
+                            }
+
+                            // Keep track of the best move(s) found so far
+                            if (score > maxScore) {
+                                maxScore = score;
+                                bestMoves = [{fromR: r, fromC: c, toR: move.r, toC: move.c}];
+                            } else if (score === maxScore) {
+                                bestMoves.push({fromR: r, fromC: c, toR: move.r, toC: move.c});
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Pick a random move from the top scoring ones
+            if (bestMoves.length > 0) {
+                const chosenMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+                animateMove(chosenMove.fromR, chosenMove.fromC, chosenMove.toR, chosenMove.toC);
+            }
+        }
+
+        // Creates a fiery particle explosion effect
+        function createExplosion(x, y) {
+            // Intense fire particles with glow
+            const fireColors = ['#ff0000', '#ff5a00', '#ff9a00', '#ffce00', '#ffffff']; 
+            for (let i = 0; i < 40; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'fixed z-50 pointer-events-none rounded-full';
+                const size = Math.random() * 16 + 6; // Bigger particles
+                const color = fireColors[Math.floor(Math.random() * fireColors.length)];
+                
+                particle.style.width = `${size}px`;
+                particle.style.height = `${size}px`;
+                particle.style.backgroundColor = color;
+                // Add a glowing effect
+                particle.style.boxShadow = `0 0 ${Math.random() * 15 + 5}px ${color}`;
+                particle.style.left = `${x - size/2}px`;
+                particle.style.top = `${y - size/2}px`;
+                
+                const duration = Math.random() * 0.5 + 0.3; // Randomize lifespan
+                particle.style.transition = `transform ${duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity ${duration}s ease-out`;
+                
+                document.body.appendChild(particle);
+                
+                // Calculate trajectory (bias upwards like real fire)
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = Math.random() * 100 + 40; 
+                const tx = Math.cos(angle) * velocity;
+                const ty = (Math.sin(angle) * velocity) - 50; // Pull upwards
+                
+                // Trigger animation on next frame
+                requestAnimationFrame(() => {
+                    particle.style.transform = `translate(${tx}px, ${ty}px) scale(0)`;
+                    particle.style.opacity = '0';
+                });
+                
+                // Clean up particle element
+                setTimeout(() => {
+                    if (document.body.contains(particle)) particle.remove();
+                }, duration * 1000);
+            }
+
+            // Smoke particles that float up and fade
+            const smokeColors = ['#334155', '#1e293b', '#0f172a'];
+            for (let i = 0; i < 15; i++) {
+                const smoke = document.createElement('div');
+                smoke.className = 'fixed z-40 pointer-events-none rounded-full blur-[2px]';
+                const size = Math.random() * 30 + 15;
+                
+                smoke.style.width = `${size}px`;
+                smoke.style.height = `${size}px`;
+                smoke.style.backgroundColor = smokeColors[Math.floor(Math.random() * smokeColors.length)];
+                smoke.style.left = `${x - size/2}px`;
+                smoke.style.top = `${y - size/2}px`;
+                smoke.style.opacity = '0.7';
+                
+                const duration = Math.random() * 0.8 + 0.5;
+                smoke.style.transition = `transform ${duration}s ease-out, opacity ${duration}s ease-in-out`;
+                
+                document.body.appendChild(smoke);
+                
+                // Float mostly straight up
+                const tx = (Math.random() - 0.5) * 60;
+                const ty = -Math.random() * 150 - 50; 
+                
+                requestAnimationFrame(() => {
+                    smoke.style.transform = `translate(${tx}px, ${ty}px) scale(1.5)`;
+                    smoke.style.opacity = '0';
+                });
+                
+                setTimeout(() => {
+                    if (document.body.contains(smoke)) smoke.remove();
+                }, duration * 1000);
+            }
+        }
+
+        // --- MOVEMENT RULES (Core Chess Engine) ---
+        
+        // Gets all moves without checking if they leave the king in check
+        function getPseudoLegalMoves(currentState, r, c, pieceType, color) {
+            const moves = [];
+            const dir = color === 'w' ? -1 : 1; // White goes up (-1), Black goes down (+1)
+
+            // Helper to add sliding moves (Rook, Bishop, Queen, King)
+            const getSlidingMoves = (directions, maxSteps = 7) => {
+                for (let [dr, dc] of directions) {
+                    for (let step = 1; step <= maxSteps; step++) {
+                        let nr = r + dr * step;
+                        let nc = c + dc * step;
+                        
+                        if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) break; // Out of bounds
+                        
+                        const targetPiece = currentState[nr][nc];
+                        if (!targetPiece) {
+                            moves.push({r: nr, c: nc});
+                        } else {
+                            if (targetPiece.color !== color) {
+                                moves.push({r: nr, c: nc}); // Can capture
+                            }
+                            break; // Blocked by piece (friend or foe)
+                        }
+                    }
+                }
+            };
+
+            switch (pieceType) {
+                case 'p': // Pawn
+                    // Forward 1
+                    if (r + dir >= 0 && r + dir < 8 && !currentState[r + dir][c]) {
+                        moves.push({r: r + dir, c: c});
+                        // Forward 2 (only if starting position and path is clear)
+                        if ((color === 'w' && r === 6) || (color === 'b' && r === 1)) {
+                            if (!currentState[r + 2 * dir][c]) {
+                                moves.push({r: r + 2 * dir, c: c});
+                            }
+                        }
+                    }
+                    // Captures (Diagonal)
+                    if (r + dir >= 0 && r + dir < 8) {
+                        if (c - 1 >= 0) {
+                            const p = currentState[r + dir][c - 1];
+                            if (p && p.color !== color) moves.push({r: r + dir, c: c - 1});
+                        }
+                        if (c + 1 < 8) {
+                            const p = currentState[r + dir][c + 1];
+                            if (p && p.color !== color) moves.push({r: r + dir, c: c + 1});
+                        }
+                    }
+                    break;
+                case 'n': // Knight
+                    const knightOffsets = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+                    for (let [dr, dc] of knightOffsets) {
+                        let nr = r + dr, nc = c + dc;
+                        if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                            const p = currentState[nr][nc];
+                            if (!p || p.color !== color) moves.push({r: nr, c: nc});
+                        }
+                    }
+                    break;
+                case 'r': // Rook
+                    getSlidingMoves([[-1, 0], [1, 0], [0, -1], [0, 1]]);
+                    break;
+                case 'b': // Bishop
+                    getSlidingMoves([[-1, -1], [-1, 1], [1, -1], [1, 1]]);
+                    break;
+                case 'q': // Queen
+                    getSlidingMoves([[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]]);
+                    break;
+                case 'k': // King
+                    getSlidingMoves([[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]], 1);
+                    break;
+            }
+            return moves;
+        }
+
+        // Checks if a specific square is under attack by the opponent
+        function isSquareAttacked(currentState, r, c, attackerColor) {
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const p = currentState[i][j];
+                    if (p && p.color === attackerColor) {
+                        const enemyMoves = getPseudoLegalMoves(currentState, i, j, p.type, p.color);
+                        if (enemyMoves.some(m => m.r === r && m.c === c)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Gets strictly legal moves (prevents moving into Check)
+        function getLegalMoves(currentState, r, c) {
+            const piece = currentState[r][c];
+            if (!piece) return [];
+            
+            const pseudoMoves = getPseudoLegalMoves(currentState, r, c, piece.type, piece.color);
+            const legalMoves = [];
+
+            for (let move of pseudoMoves) {
+                // 1. Simulate the move on a cloned board
+                const testBoard = currentState.map(row => [...row]);
+                testBoard[move.r][move.c] = piece;
+                testBoard[r][c] = null;
+
+                // 2. Find the King's position after the move
+                let kingR = -1, kingC = -1;
+                for (let i = 0; i < 8; i++) {
+                    for (let j = 0; j < 8; j++) {
+                        const p = testBoard[i][j];
+                        if (p && p.type === 'k' && p.color === piece.color) {
+                            kingR = i; kingC = j;
+                            break;
+                        }
+                    }
+                    if (kingR !== -1) break;
+                }
+
+                // 3. If King is not in check on the simulated board, the move is legal
+                const enemyColor = piece.color === 'w' ? 'b' : 'w';
+                if (!isSquareAttacked(testBoard, kingR, kingC, enemyColor)) {
+                    legalMoves.push(move);
+                }
+            }
+
+            // --- CASTLING RULES ---
+            if (piece.type === 'k' && !piece.hasMoved) {
+                const enemyColor = piece.color === 'w' ? 'b' : 'w';
+                const inCheck = isSquareAttacked(currentState, r, c, enemyColor);
+                
+                if (!inCheck) {
+                    // Kingside Castling
+                    const rookK = currentState[r][7];
+                    if (rookK && rookK.type === 'r' && !rookK.hasMoved) {
+                        if (!currentState[r][5] && !currentState[r][6]) {
+                            if (!isSquareAttacked(currentState, r, 5, enemyColor) && !isSquareAttacked(currentState, r, 6, enemyColor)) {
+                                legalMoves.push({r: r, c: 6});
+                            }
+                        }
+                    }
+                    
+                    // Queenside Castling
+                    const rookQ = currentState[r][0];
+                    if (rookQ && rookQ.type === 'r' && !rookQ.hasMoved) {
+                        if (!currentState[r][1] && !currentState[r][2] && !currentState[r][3]) {
+                            if (!isSquareAttacked(currentState, r, 2, enemyColor) && !isSquareAttacked(currentState, r, 3, enemyColor)) {
+                                legalMoves.push({r: r, c: 2});
+                            }
+                        }
+                    }
+                }
+            }
+
+            return legalMoves;
+        }
+
+        // Start game on load
+        window.onload = initGame;
+    </script>
+</body>
+</html>
